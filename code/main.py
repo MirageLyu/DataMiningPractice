@@ -2,6 +2,7 @@ import pkuseg
 import numpy as np
 import pandas as pd
 import pickle
+import gc
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from sklearn.naive_bayes import BernoulliNB, MultinomialNB
 from sklearn.neural_network import MLPClassifier
@@ -12,6 +13,7 @@ from tensorflow.contrib import rnn
 from gensim.models import Word2Vec, Doc2Vec
 from gensim.models.doc2vec import TaggedDocument
 from scipy.sparse import lil_matrix
+import jieba
 
 diminput = 50
 dimhidden = 128
@@ -29,7 +31,6 @@ def RNN(X, W, b, nsteps):
     O = tf.matmul(LSTM_O[-1], W["h2"]) + b["b2"]
     print("Network ready.")
     return  {"X":X,"H_1":H_1,"LSTM_O":LSTM_O,"LSTM_S":LSTM_S,"O":O}
-
 
 def myRNN(words_vec, Solutions, test_data):
     W = {"h1" : tf.Variable(tf.random_normal([diminput, dimhidden])),
@@ -120,84 +121,86 @@ def Test_Text_Cut_Thulac_v():
 
 def Text_Cut_Thulac():
     #不增加标词性
-    pku1 = pkuseg.pkuseg(model_name='web')
-
     dataPath = 'Mining_Challenge_Dataset/train.data'
     outPath = 'Mining_Challenge_Dataset/train_cut.data'
 
-    file = open(dataPath, 'r')
-    outfile = open(outPath, 'w')
-    texts = file.readlines()
+    file = open(dataPath, 'r', encoding ="utf-8-sig")
+    outfile = open(outPath, 'w', encoding="utf-8-sig")
+    texts = file.read().splitlines()
 
     texts_len = len(texts)
 
     for i in range(texts_len):
-        texts[i] = pku1.cut(texts[i])
+        text = jieba.cut(texts[i], cut_all=False)
+        texts[i] = " ".join(text)
         if i % 1000 == 0:
             percent = float(i) / float(texts_len)
             print('Cutting: ' + str(round(percent, 4)))
-        for word in texts[i]:
-            print(word, file=outfile, end=' ')
-        print('', file=outfile)
+        print(texts[i], file=outfile)
+
+    file.close()
+    outfile.close()
 
 def Test_Text_Cut_Thulac():
     #不增加标词性
-    pku1 = pkuseg.pkuseg(model_name='web')
-
     dataPath = 'Mining_Challenge_Dataset/test.data'
     outPath = 'Mining_Challenge_Dataset/test_cut.data'
 
-    file = open(dataPath, 'r')
-    outfile = open(outPath, 'w')
-    texts = file.readlines()
+    file = open(dataPath, 'r', encoding ="utf-8-sig")
+    outfile = open(outPath, 'w', encoding ="utf-8-sig")
+    texts = file.read().splitlines()
 
     texts_len = len(texts)
 
     for i in range(texts_len):
         texts[i] = texts[i].split('\t')[1]
-        texts[i] = pku1.cut(texts[i])
+        text = jieba.cut(texts[i], cut_all=False)
+        texts[i] = " ".join(text)
         if i % 1000 == 0:
             percent = float(i) / float(texts_len)
             print('Cutting: ' + str(round(percent, 4)))
-        for word in texts[i]:
-            print(word, file=outfile, end=' ')
-        print('', file=outfile)
+        print(texts[i], file=outfile)
+
+    file.close()
+    outfile.close()
 
 def AntiStopWords():
     outPath = 'Mining_Challenge_Dataset/train_cut_stopped.data'
-    outfile = open(outPath, 'w')
+    outfile = open(outPath, 'w', encoding ='utf-8-sig')
 
     stop_words = None
-    with open("Mining_Challenge_Dataset/stopwords.data", "r") as f:
+    with open("Mining_Challenge_Dataset/stopwords.data", "r", encoding ='utf-8-sig') as f:
         stop_words = f.readlines()
         stop_words = [word.replace("\n", "") for word in stop_words]
 
     dataPath = 'Mining_Challenge_Dataset/train_cut.data'
 
-    file = open(dataPath, 'r')
+    file = open(dataPath, 'r', encoding='utf-8-sig')
     texts = file.readlines()
 
     for i, line in enumerate(texts):
-
         for word in stop_words:
             if word in line:
                 line = line.replace(word, "")
         texts[i] = line
 
     outfile.writelines(texts)
+    f.close()
+    outfile.close()
+    file.close()
 
 def Test_AntiStopWords():
     outPath = 'Mining_Challenge_Dataset/test_cut_stopped.data'
-    outfile = open(outPath, 'w')
+    outfile = open(outPath, 'w', encoding='utf-8-sig')
 
     stop_words = None
-    with open("Mining_Challenge_Dataset/stopwords.data", "r") as f:
+    with open("Mining_Challenge_Dataset/stopwords.data", "r", encoding='utf-8-sig') as f:
         stop_words = f.readlines()
         stop_words = [word.replace("\n", "") for word in stop_words]
 
     dataPath = 'Mining_Challenge_Dataset/test_cut.data'
 
-    file = open(dataPath, 'r')
+    file = open(dataPath, 'r', encoding='utf-8-sig')
     texts = file.readlines()
 
     for i, line in enumerate(texts):
@@ -208,25 +211,30 @@ def Test_AntiStopWords():
         texts[i] = line
 
     outfile.writelines(texts)
+    outfile.close()
+    file.close()
+    f.close()
 
-def Vectorizer_Generate_Model_Pickle():
-    dataPath = 'Mining_Challenge_Dataset/train_cut_stopped.data'
-
-    file = open(dataPath, 'r')
+def Count_Vectorizer():
+    dataPath = 'Mining_Challenge_Dataset/train_cut.data'
+    file = open(dataPath, 'r', encoding ='utf-8-sig')
     texts = file.read().splitlines()
 
-    testPath = 'Mining_Challenge_Dataset/test_cut_stopped.data'
-
-    testfile = open(testPath, 'r')
+    testPath = 'Mining_Challenge_Dataset/test_cut.data'
+    testfile = open(testPath, 'r', encoding='utf-8-sig')
     testtexts = testfile.read().splitlines()
 
-    texts = texts + testtexts
+    train_data = texts + testtexts
 
-    count_vect = CountVectorizer(min_df=1, analyzer='word')
-    count_vect.fit(texts)
+    count_vect = CountVectorizer()
+    result = count_vect.fit_transform(train_data)
 
-    pickle.dump(count_vect, open('vector.model', 'wb'))
-    print("CountVectorizer Model Dumped Successfully.")
+    word_vec = result[0:len(texts)]
+    test_vec = result[len(texts):len(train_data)]
+
+    print("CountVectorizer Model Successfully.")
+
+    return word_vec, test_vec
 
 def TFIDF_Vectorizer_Generate_Model_Pickle():
     dataPath = 'Mining_Challenge_Dataset/train_cut_stopped.data'
@@ -248,8 +256,8 @@ def TFIDF_Vectorizer_Generate_Model_Pickle():
     print("TFIDF_Vectorizer Model Dumped Successfully.")
 
 def Vectorizer():
-    dataPath = 'Mining_Challenge_Dataset/train_cut_stopped.data'
-    testPath = 'Mining_Challenge_Dataset/test_cut_stopped.data'
+    dataPath = 'Mining_Challenge_Dataset/train_cut.data'
+    testPath = 'Mining_Challenge_Dataset/test_cut.data'
 
 
     file = open(dataPath, 'r', encoding="utf-8-sig")
@@ -268,28 +276,34 @@ def Vectorizer():
         word_list = [word for word in word_list if word != '']
         document = TaggedDocument(word_list, tags=[i])
         train_data_tg.append(document)
-
-    print(train_data_tg[0])
-
     #count_vect = pickle.load(open('vector.model', 'rb'))
 
-    vect = Doc2Vec(train_data_tg, workers=4, min_count=1, vector_size=300)
-    #vect.train(train_data_tg, total_examples=vect.corpus_count, epochs=100)
+    vect = Doc2Vec(train_data_tg, workers=4, min_count=1, vector_size=750)
+    #vect = Doc2Vec.load("doc2vec.model")
 
-    words_vec = lil_matrix((len(texts), 300))
-    test_vec = lil_matrix((len(testtexts), 300))
+    del train_data
+    del train_data_tg
+    gc.collect()
+
+    vect.save("doc2vec.model")
+
+    words_vec = np.zeros((len(texts), 750))
+    test_vec = np.zeros((len(testtexts), 750))
 
     for i in range(len(texts)):
         test_text = texts[i].split(' ')
-        words_vec[i] = vect.infer_vector(doc_words=test_text, alpha=0.025, steps=500)
+        words_vec[i] = vect.infer_vector(doc_words=test_text)
         if i%1000 == 0:
             print("Training data vectoring: " + str(float(i)/float(len(texts))))
 
     for i in range(len(testtexts)):
         test_text = testtexts[i].split(' ')
-        test_vec[i] = vect.infer_vector(doc_words=test_text, alpha=0.025, steps=500)
+        test_vec[i] = vect.infer_vector(doc_words=test_text)
         if i%1000 == 0:
             print("Testing data vectoring: " + str(float(i)/float(len(testtexts))))
+
+    file.close()
+    test_file.close()
 
     return words_vec, test_vec
 
@@ -304,24 +318,23 @@ def Vectorizer():
 
 def readSolutionMap():
     filePath = 'Mining_Challenge_Dataset/emoji.data'
-    emojifile = open(filePath, 'r')
+    emojifile = open(filePath, 'r', encoding='utf-8-sig')
 
     SolutionMap = {}
 
     index = 0
 
-    lines = emojifile.readlines()
+    lines = emojifile.read().splitlines()
     for line in lines:
         key = index
         index += 1
         value = line.split('\t')[1]
-        value = value.split('\n')[0]
         SolutionMap[value] = key
     return SolutionMap
 
 def transformSolutionToIndex(sol_map):
     filePath = 'Mining_Challenge_Dataset/train.solution'
-    solution = open(filePath, 'r')
+    solution = open(filePath, 'r', encoding='utf-8-sig')
 
     lines = solution.readlines()
 
@@ -334,9 +347,7 @@ def transformSolutionToIndex(sol_map):
         result_list[index] = sol_map[key]
         index += 1
 
-    return np.array(result_list)
-
-
+    return result_list
 
 def Naive_Bayes(words_vec, Solutions, test_data):
     clf = MultinomialNB()
@@ -356,7 +367,10 @@ def Naive_Bayes(words_vec, Solutions, test_data):
 def MLP(words_vec, Solutions, test_data):
     print("Start training MLP.")
 
-    clf = MLPClassifier(hidden_layer_sizes=(50, 50))
+    clf = MLPClassifier(solver = 'adam', hidden_layer_sizes=(50, 50))
+
+    gc.collect()
+
     clf.fit(words_vec, Solutions)
 
     print("Model Trained Finished.")
@@ -365,7 +379,7 @@ def MLP(words_vec, Solutions, test_data):
 
     print("Predict Finished.")
 
-    outfile = open('Output/nbtest.csv', 'w')
+    outfile = open('Output/mlptest.csv', 'w')
     outfile.write('ID,Expected\n')
 
     print("Output to file successfully.")
@@ -424,9 +438,11 @@ if __name__ == '__main__':
     #Test_Text_Cut_Thulac()
     #Test_AntiStopWords()
 
-    #Vectorizer_Generate_Model_Pickle()
+    #train, test = Count_Vectorizer()
 
     train, test = Vectorizer()
+
+    #Naive_Bayes(train, transformSolutionToIndex(readSolutionMap()), test)
 
     MLP(train, transformSolutionToIndex(readSolutionMap()), test)
 
