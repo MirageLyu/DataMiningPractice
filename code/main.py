@@ -12,8 +12,8 @@ import tensorflow as tf
 from tensorflow.contrib import rnn
 from gensim.models import Word2Vec, Doc2Vec
 from gensim.models.doc2vec import TaggedDocument
-from scipy.sparse import lil_matrix
 import jieba
+from sklearn.ensemble import BaggingClassifier
 
 diminput = 50
 dimhidden = 128
@@ -255,6 +255,62 @@ def TFIDF_Vectorizer_Generate_Model_Pickle():
     pickle.dump(count_vect, open('vector.model', 'wb'))
     print("TFIDF_Vectorizer Model Dumped Successfully.")
 
+def w2v_Mean_Vectorizer():
+    dataPath = 'Mining_Challenge_Dataset/train_cut.data'
+    testPath = 'Mining_Challenge_Dataset/test_cut.data'
+
+
+    file = open(dataPath, 'r', encoding="utf-8-sig")
+    texts = file.read().splitlines()
+    test_file = open(testPath, 'r', encoding="utf-8-sig")
+    testtexts = test_file.read().splitlines()
+
+    train_data = texts + testtexts
+
+    for i in range(len(train_data)):
+        train_data[i] = train_data[i].split(' ')
+        train_data[i] = [word for word in train_data[i] if word != '']
+                                                                                                                                                                    
+
+    print("Training Doc2Vec")
+    vect = Word2Vec(train_data, size=300, min_count=1, sg=1, workers=4)
+    #vect = Word2Vec.load("w2vdoc2vec.model")
+
+    print("Saving w2vDoc2Vec Model")
+    vect.save("w2vdoc2vec.model")
+    print("Model Saved.")
+
+    words_vec = np.zeros((len(texts), 300), dtype=np.float)
+    test_vec = np.zeros((len(testtexts), 300), dtype=np.float)
+
+    for i in range(len(testtexts)):
+        test_text = train_data[i + len(texts)]
+
+        for word in test_text:
+            test_vec[i] = np.add(test_vec[i], vect[word])
+
+        test_vec[i] = np.divide(test_vec[i], len(test_text))
+
+        if i % 1000 == 0:
+            print("Testing data vectoring: " + str(float(i) / float(len(testtexts))))
+
+    for i in range(len(texts)):
+        test_text = train_data[i]
+
+        for word in test_text:
+            words_vec[i] = np.add(words_vec[i], vect[word])
+
+        words_vec[i] = np.divide(words_vec[i], len(test_text))
+
+        if i%1000 == 0:
+            print("Training data vectoring: " + str(float(i)/float(len(texts))))
+
+
+    file.close()
+    test_file.close()
+
+    return words_vec, test_vec
+
 def Vectorizer():
     dataPath = 'Mining_Challenge_Dataset/train_cut.data'
     testPath = 'Mining_Challenge_Dataset/test_cut.data'
@@ -273,31 +329,37 @@ def Vectorizer():
         word_list = text.split(' ')
         l = len(word_list)
         word_list[l-1] = word_list[l-1].strip()
-        word_list = [word for word in word_list if word != '']
+        word_list = [word for word in word_list if word != '' and word != '，' and word != '。']
         document = TaggedDocument(word_list, tags=[i])
         train_data_tg.append(document)
     #count_vect = pickle.load(open('vector.model', 'rb'))
 
-    vect = Doc2Vec(train_data_tg, workers=4, min_count=1, vector_size=750)
+
+    print("Training Doc2Vec")
+    vect = Doc2Vec(train_data_tg, workers=4, min_count=1, vector_size=50)
     #vect = Doc2Vec.load("doc2vec.model")
 
     del train_data
     del train_data_tg
     gc.collect()
 
+    print("Saving Doc2Vec Model")
     vect.save("doc2vec.model")
+    print("Model Saved.")
 
-    words_vec = np.zeros((len(texts), 750))
-    test_vec = np.zeros((len(testtexts), 750))
+    words_vec = np.zeros((len(texts), 50))
+    test_vec = np.zeros((len(testtexts), 50))
 
     for i in range(len(texts)):
         test_text = texts[i].split(' ')
+        test_text = [word for word in test_text if word != '' and word != '，' and word != '。']
         words_vec[i] = vect.infer_vector(doc_words=test_text)
         if i%1000 == 0:
             print("Training data vectoring: " + str(float(i)/float(len(texts))))
 
     for i in range(len(testtexts)):
         test_text = testtexts[i].split(' ')
+        test_text = [word for word in test_text if word != '' and word != '，' and word != '。']
         test_vec[i] = vect.infer_vector(doc_words=test_text)
         if i%1000 == 0:
             print("Testing data vectoring: " + str(float(i)/float(len(testtexts))))
@@ -367,15 +429,25 @@ def Naive_Bayes(words_vec, Solutions, test_data):
 def MLP(words_vec, Solutions, test_data):
     print("Start training MLP.")
 
-    clf = MLPClassifier(solver = 'adam', hidden_layer_sizes=(50, 50))
+    clf = MLPClassifier(solver = 'adam', hidden_layer_sizes=(60, 60))
+    #clf.fit(words_vec, Solutions)
+    #model_file = open("mlp.model", "wb")
+    #pickle.dump(clf, file = model_file)
+    #model_file.close()
 
-    gc.collect()
+    bagging = BaggingClassifier(clf, max_samples=0.5, max_features=0.8)
+    bagging.fit(words_vec, Solutions)
 
-    clf.fit(words_vec, Solutions)
+    #model_file = open("mlp.model", "rb")
+    #clf = pickle.load(model_file)
+    #model_file.close()
 
     print("Model Trained Finished.")
 
-    result = clf.predict(test_data)
+
+
+    #result = clf.predict(test_data)
+    result= bagging.predict(test_data)
 
     print("Predict Finished.")
 
@@ -440,7 +512,7 @@ if __name__ == '__main__':
 
     #train, test = Count_Vectorizer()
 
-    train, test = Vectorizer()
+    train, test = w2v_Mean_Vectorizer()
 
     #Naive_Bayes(train, transformSolutionToIndex(readSolutionMap()), test)
 
